@@ -17,7 +17,8 @@
 * - Add 24 led 2 strip
 * - Adopt setup value
 * - Change Color Schemas
-* - Add auto change color scheme for Button1 pressed > 1sec (req arduino-timer-api library).
+* - Add auto change color scheme for Button1 pressed > 1sec (req arduino-timer-api library)
+* - Store color settings in EEPROM (req EEPROM library).
 **********************************************************************
 */
 
@@ -32,6 +33,12 @@
 //
 
 #include <timer-api.h>
+
+//
+// @DSL include EEPROM library:
+//
+
+#include <EEPROM.h>
 
 //
 // debugging settings
@@ -114,7 +121,7 @@ int reverseShowPeaks = true;                              // reverses the on/off
 int selectButton1Pin = 8;                                 // push button for changing settings on digital pin 8
 int useSelectButton1 = true;                              // set to false if no push button1 for selecting the color scheme is connected  @EB
 int selectButton2Pin = 9;                                 // push button for changing settings on digital pin 9
-int useSelectButton2 = false;                              // set to false if no push button2 is connected  @EB
+int useSelectButton2 = false;                             // set to false if no push button2 is connected  @EB
 
 //
 // setup variables for the number of leds and led strip or 2 rings
@@ -509,7 +516,8 @@ int pulsing = false;                                      // pulsing will displa
 int spinCircle = false;                                   // spin the animation. will not work with stripsOn2Pins  @EB
 
 int animType = 1;                                         // startup animation selection (1 looks nice for 1 ring)  @EB
-byte colorScheme = 0;                                     // 0: green-yellow+red_peak
+byte colorScheme = 0;                                     // initial value before stored in EEPROM @DSL
+                                                          // 0: green-yellow+red_peak
                                                           // 1: red-purple+blue_peak
                                                           // 2: blue-cyan+green_peak
                                                           // 3: green-yellow-red-purple-blue-cyan+white_peak
@@ -527,10 +535,10 @@ byte colorScheme = 0;                                     // 0: green-yellow+red
                                                           // 15: white-red+red_peak
                                                           // 16: color wheel, 17: spinning color wheel,
                                                           // 18: as 17 but spread with factor colorScheme18Factor  @EB
-int maxColorScheme = 15;                                  // used for looping through the color schemes with the switch button
+int maxColorScheme = 15;                                   // used for looping through the color schemes with the switch button
 int colorScheme17SpinDelay = stripNumOfLeds / 4 ;         // delay for spinning scheme 17
 int colorScheme18Factor = 3;                              // wheel spread factor for scheme 18 @EB
-byte autoColorScheme = true;                               // startup auto looping through the color schemes. Will work with pressed button1 => 1 sec @DSL
+byte autoColorScheme = true;                              // startup (before stored in EEPROM) auto looping through the color schemes. Will work with pressed button1 => 1 sec @DSL
 int autoColorSchemeDelay = 30;                            // delay for change scheme with autoColorScheme @DSL
 
 int minValue = 10;                                        // min analog input value
@@ -554,6 +562,11 @@ int displayTopAsPeak = false;                             // always display the 
 int droppingPeak = true;                                  // display dropping peaks or not. note: displayPeaks has to be true 
 int bouncingPeaks = false;                                // display bouncing peaks or not. note: displayPeaks has to be true 
 int dynamicBouncingPeaks = false;                         // bounce less with lower peaks. note: bouncingPeaks has to be true 
+
+// EEPROM address map @DSL
+int init_EEPROM_Addr = 0;                                 // EEPROM initiations
+int colorScheme_EEPROM_Addr = 1;                          // colorScheme
+int autoColorScheme_EEPROM_Addr = 2;                      // autoColorScheme
 
 //
 // initialize other variables 
@@ -629,6 +642,18 @@ void setup() {
     Serial.begin(115200);
   #endif
 
+  // @DSL  restore or store initial value colorScheme, autoColorScheme from/to EEPROM
+  if (EEPROM.read(init_EEPROM_Addr)==true) {
+    EEPROM.get(colorScheme_EEPROM_Addr,colorScheme);
+    EEPROM.get(autoColorScheme_EEPROM_Addr,autoColorScheme);
+    selectButton1PinSetting = colorScheme;
+  }
+  else {
+    EEPROM.write(init_EEPROM_Addr,true);
+    EEPROM.put(colorScheme_EEPROM_Addr,colorScheme);
+    EEPROM.put(autoColorScheme_EEPROM_Addr,autoColorScheme);
+  }
+  
   randomSeed(analogRead(2));
 
   if (stripsOn2Pins) {
@@ -822,6 +847,7 @@ void readSensorValues() {
       if ((millis() - selectButton1Timer) > 1000) {
         autoColorScheme = true;
         seconds = 0;
+        EEPROM.put(autoColorScheme_EEPROM_Addr,autoColorScheme);
         
         while (digitalRead(selectButton1Pin) == HIGH) {}
         selectButton1PinState = LOW;
@@ -830,11 +856,13 @@ void readSensorValues() {
     }
     else if (selectButton1PinState == LOW && prevSelectButton1PinState == HIGH) {
       autoColorScheme = false;
+      EEPROM.put(autoColorScheme_EEPROM_Addr,autoColorScheme);
       selectButton1PinSetting++;
       if (selectButton1PinSetting > maxColorScheme) {
         selectButton1PinSetting = 0;
       }
       colorScheme = selectButton1PinSetting;
+      EEPROM.put(colorScheme_EEPROM_Addr,colorScheme);
 
       if (colorScheme == 18)
         colorScheme17SpinValue = (colorScheme17SpinValue * colorScheme18Factor);
