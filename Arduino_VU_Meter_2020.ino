@@ -17,6 +17,7 @@
 * - Add 24 led 2 strip
 * - Adopt setup value
 * - Change Color Schemas
+* - Add auto change color scheme for Button1 pressed > 1sec (req arduino-timer-api library).
 **********************************************************************
 */
 
@@ -25,6 +26,12 @@
 //
 
 #include <Adafruit_NeoPixel.h>
+
+//
+// @DSL include arduino-timer-api library:
+//
+
+#include <timer-api.h>
 
 //
 // debugging settings
@@ -497,9 +504,9 @@ int useSelectButton2 = false;                              // set to false if no
 //
 
 // basic settings
-int pulsing = false;                                       // pulsing will display from the middle of each strip or ring  @EB
+int pulsing = false;                                      // pulsing will display from the middle of each strip or ring  @EB
 
-int spinCircle = false;                                    // spin the animation. will not work with stripsOn2Pins  @EB
+int spinCircle = false;                                   // spin the animation. will not work with stripsOn2Pins  @EB
 
 int animType = 1;                                         // startup animation selection (1 looks nice for 1 ring)  @EB
 byte colorScheme = 0;                                     // 0: green-yellow+red_peak
@@ -523,6 +530,8 @@ byte colorScheme = 0;                                     // 0: green-yellow+red
 int maxColorScheme = 15;                                  // used for looping through the color schemes with the switch button
 int colorScheme17SpinDelay = stripNumOfLeds / 4 ;         // delay for spinning scheme 17
 int colorScheme18Factor = 3;                              // wheel spread factor for scheme 18 @EB
+byte autoColorScheme = true;                               // startup auto looping through the color schemes. Will work with pressed button1 => 1 sec @DSL
+int autoColorSchemeDelay = 30;                            // delay for change scheme with autoColorScheme @DSL
 
 int minValue = 10;                                        // min analog input value
 int sensitivityValue = 110;                               // 0 - 255, initial value (value read from the potentiometer if useSensorValues = true)
@@ -540,7 +549,7 @@ int sensorDeviationBrightness = 3;                        // eliminate fluctuati
 int overflowDelay = 10;                                   // overflow hold time
 
 // peak settings @EB
-int displayPeaks = true;                                 // value will be set by the switch if useSensorValues = true
+int displayPeaks = true;                                  // value will be set by the switch if useSensorValues = true
 int displayTopAsPeak = false;                             // always display the top LED in peak color
 int droppingPeak = true;                                  // display dropping peaks or not. note: displayPeaks has to be true 
 int bouncingPeaks = false;                                // display bouncing peaks or not. note: displayPeaks has to be true 
@@ -575,6 +584,8 @@ int selectButton2PinState = 0, prevSelectButton2PinState = 0;
 
 int selectButton1PinSetting = colorScheme;
 int selectButton2PinSetting = 0;
+
+volatile int seconds;
 
 int i, j;
 int leftDropTime, rightDropTime;
@@ -644,6 +655,9 @@ void setup() {
   nonLinearResponseFactor = 90 / (float) maxDisplaySegments;
   log10MaxDisplaySegments = log10(maxDisplaySegments);
 
+  // @DSL initialize Timer 1Hz for autoColorScheme:
+  timer_init_ISR_1Hz(TIMER_DEFAULT);
+  
   pinMode(showPeaksPin, INPUT);    
   
   if (useSelectButton1)
@@ -806,16 +820,16 @@ void readSensorValues() {
       
     if (selectButton1PinState == HIGH && prevSelectButton1PinState == HIGH) {
       if ((millis() - selectButton1Timer) > 1000) {
-        pulsing = !pulsing;
-        setStripColors();
-        displayNumber(colorScheme, 250);
-
+        autoColorScheme = true;
+        seconds = 0;
+        
         while (digitalRead(selectButton1Pin) == HIGH) {}
         selectButton1PinState = LOW;
         clearValues();
       }
     }
     else if (selectButton1PinState == LOW && prevSelectButton1PinState == HIGH) {
+      autoColorScheme = false;
       selectButton1PinSetting++;
       if (selectButton1PinSetting > maxColorScheme) {
         selectButton1PinSetting = 0;
@@ -830,7 +844,7 @@ void readSensorValues() {
     }
     prevSelectButton1PinState = selectButton1PinState;
   }
-
+  
   if (useSelectButton2) {
     selectButton2PinState = digitalRead(selectButton2Pin);
     
@@ -1840,6 +1854,27 @@ void displayNumber (int number, int displayDelay) {
     right_strip.clear();
 }
 
+//
+// autoColorScheme Timer 1Hz interrupt @DSL
+//
+void timer_handle_interrupts(int timer) {
+  seconds++;
+  if(seconds >= autoColorSchemeDelay) {
+    seconds = 0;
+    if (autoColorScheme) {
+      selectButton1PinSetting++;
+      if (selectButton1PinSetting > maxColorScheme) {
+        selectButton1PinSetting = 0;
+      }
+      colorScheme = selectButton1PinSetting;
+      
+      if (colorScheme == 18)
+        colorScheme17SpinValue = (colorScheme17SpinValue * colorScheme18Factor);
+      
+      setStripColors();
+    }
+  }
+}
 
 //
 // for debugging
