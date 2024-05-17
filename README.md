@@ -6,6 +6,8 @@ This project is based on [Stereo NeoPixel Ring VU Meter](https://www.hackster.io
 
 I found many projects for a VU Meter on Adruino, but all of them did not suit me. They were not colorful or functional enough. Therefore, I decided to remake someone else’s UV Meter project that would meet my requirements - the final product must be made on a PCB, in a separate case with adjustments, and LED strips must also be in separate cases, connected to the main one.
 
+[<img src="https://img.youtube.com/vi/ISonJyhN0Tk/hqdefault.jpg" width=400>](https://youtu.be/ISonJyhN0Tk)
+
 ## Hardware
 
 * Arduino Nano
