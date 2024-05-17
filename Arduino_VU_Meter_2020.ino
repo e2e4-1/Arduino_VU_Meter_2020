@@ -18,7 +18,8 @@
 * - Adopt setup value
 * - Change Color Schemas
 * - Add auto change color scheme for Button1 pressed > 1sec (req arduino-timer-api library)
-* - Store color settings in EEPROM (req EEPROM library).
+* - Store color settings in EEPROM (req EEPROM library)
+* - Add 7.1 segment numeric display.
 **********************************************************************
 */
 
@@ -122,6 +123,16 @@ int selectButton1Pin = 8;                                 // push button for cha
 int useSelectButton1 = true;                              // set to false if no push button1 for selecting the color scheme is connected  @EB
 int selectButton2Pin = 9;                                 // push button for changing settings on digital pin 9
 int useSelectButton2 = false;                             // set to false if no push button2 is connected  @EB
+
+// 7.1 segment numeric display with 74HC595 or CD4094B shift register @DSL
+// DP,G-A segment connected to Q0-Q7, 74HC595: pin 13 (-OE) to Gnd, pin 10 (MR) to +5v, CD4094B: pin 15 (OE) to +5v @DSL
+// Number indicate current colorScheme mode, DecPoint for autoColorScheme mode On/Off. @DSL
+
+int displayClockPin = 2;                                  // connected to pin 11 (STCP) on the 74HC595 or pin 3 (CLK) on CD4094B @DSL
+int displayStrobePin = 3;                                 // connected to pin 12 (SHCP) on the 74HC595 or pin 1 (STB) on CD4094B @DSL
+int displayDataPin = 4;                                   // connected to pin 14 (DS) on the 74HC595 or pin 2 (D) on CD4094B @DSL
+byte displayCCType = true;                                // set true for Common Cathode or false for Common Anode dispay type @DSL
+int useDisplay = true;                                    // set to false if no display connected @DSL  
 
 //
 // setup variables for the number of leds and led strip or 2 rings
@@ -535,7 +546,7 @@ byte colorScheme = 0;                                     // initial value befor
                                                           // 15: white-red+red_peak
                                                           // 16: color wheel, 17: spinning color wheel,
                                                           // 18: as 17 but spread with factor colorScheme18Factor  @EB
-int maxColorScheme = 15;                                   // used for looping through the color schemes with the switch button
+int maxColorScheme = 15;                                  // used for looping through the color schemes with the switch button
 int colorScheme17SpinDelay = stripNumOfLeds / 4 ;         // delay for spinning scheme 17
 int colorScheme18Factor = 3;                              // wheel spread factor for scheme 18 @EB
 byte autoColorScheme = true;                              // startup (before stored in EEPROM) auto looping through the color schemes. Will work with pressed button1 => 1 sec @DSL
@@ -567,6 +578,9 @@ int dynamicBouncingPeaks = false;                         // bounce less with lo
 int init_EEPROM_Addr = 0;                                 // EEPROM initiations
 int colorScheme_EEPROM_Addr = 1;                          // colorScheme
 int autoColorScheme_EEPROM_Addr = 2;                      // autoColorScheme
+
+// set up the array with the segments for 0 to 9, A to F @DSL
+int segChar[] = {252, 96, 218, 242, 102, 182, 190, 224, 254, 246, 238, 62, 156, 122, 158, 142};
 
 //
 // initialize other variables 
@@ -690,6 +704,13 @@ void setup() {
 
   if (useSelectButton2)
     pinMode(selectButton2Pin, INPUT);  
+
+  if (useDisplay) {
+    pinMode(displayDataPin, OUTPUT);  
+    pinMode(displayClockPin, OUTPUT);  
+    pinMode(displayStrobePin, OUTPUT);
+    displaySet (colorScheme, autoColorScheme);
+  }
 
   left_strip.begin();
   if (stripsOn2Pins) 
@@ -848,6 +869,9 @@ void readSensorValues() {
         autoColorScheme = true;
         seconds = 0;
         EEPROM.put(autoColorScheme_EEPROM_Addr,autoColorScheme);
+        if (useDisplay) {
+          displaySet (colorScheme, autoColorScheme);
+        }
         
         while (digitalRead(selectButton1Pin) == HIGH) {}
         selectButton1PinState = LOW;
@@ -868,7 +892,12 @@ void readSensorValues() {
         colorScheme17SpinValue = (colorScheme17SpinValue * colorScheme18Factor);
 
       setStripColors();
-      displayNumber(colorScheme, 250);
+      if (useDisplay) {
+        displaySet (colorScheme, autoColorScheme);
+      }
+      else {
+        displayNumber(colorScheme, 250);
+      }
     }
     prevSelectButton1PinState = selectButton1PinState;
   }
@@ -900,7 +929,12 @@ void readSensorValues() {
       }
       
       setStripColors();
-      displayNumber(colorScheme, 250);
+      if (useDisplay) {
+        displaySet (colorScheme, autoColorScheme);
+      }
+      else {
+        displayNumber(colorScheme, 250);
+      }
     }
     
     prevSelectButton2PinState = selectButton2PinState;
@@ -1883,6 +1917,32 @@ void displayNumber (int number, int displayDelay) {
 }
 
 //
+//  Set Number & DP on display @DSL
+//
+void displaySet(byte n, byte dp) {
+  if (n < 16) {
+    digitalWrite(displayStrobePin, LOW);
+    if (displayCCType) {
+      shiftOut(displayDataPin, displayClockPin, MSBFIRST, byte(segChar[n] + dp));
+    }
+    else {
+      shiftOut(displayDataPin, displayClockPin, MSBFIRST, byte(~(segChar[n] + dp)));
+    }
+    digitalWrite(displayStrobePin, HIGH);
+  }
+  else if (n >= 16) {
+    digitalWrite(displayStrobePin, LOW);
+    if (displayCCType) { 
+      shiftOut(displayDataPin, displayClockPin, MSBFIRST, byte(2 + dp));
+    }
+    else {
+      shiftOut(displayDataPin, displayClockPin, MSBFIRST, byte(~(2 + dp)));
+    }
+    digitalWrite(displayStrobePin, HIGH);
+  }
+}
+
+//
 // autoColorScheme Timer 1Hz interrupt @DSL
 //
 void timer_handle_interrupts(int timer) {
@@ -1900,6 +1960,9 @@ void timer_handle_interrupts(int timer) {
         colorScheme17SpinValue = (colorScheme17SpinValue * colorScheme18Factor);
       
       setStripColors();
+      if (useDisplay) {
+        displaySet (colorScheme, autoColorScheme);
+      }
     }
   }
 }
